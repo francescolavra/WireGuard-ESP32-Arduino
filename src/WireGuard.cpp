@@ -9,6 +9,7 @@
 #include "freertos/event_groups.h"
 #include "esp_system.h"
 
+#include "lwip/tcpip.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "lwip/ip.h"
@@ -28,6 +29,16 @@ static struct netif *previous_default_netif = NULL;
 static uint8_t wireguard_peer_index = WIREGUARDIF_INVALID_INDEX;
 
 #define TAG "[WireGuard] "
+
+#define WG_MUTEX_LOCK()                                \
+  if (!sys_thread_tcpip(LWIP_CORE_LOCK_QUERY_HOLDER)) { \
+    LOCK_TCPIP_CORE();                                  \
+  }
+
+#define WG_MUTEX_UNLOCK()                             \
+  if (sys_thread_tcpip(LWIP_CORE_LOCK_QUERY_HOLDER)) { \
+    UNLOCK_TCPIP_CORE();                               \
+  }
 
 bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort) {
 	struct wireguardif_init_data wg;
@@ -81,13 +92,17 @@ bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const I
 		return false;
 	}
 	// Register the new WireGuard network interface with lwIP
+	WG_MUTEX_LOCK();
 	wg_netif = netif_add(&wg_netif_struct, ip_2_ip4(&ipaddr), ip_2_ip4(&netmask), ip_2_ip4(&gateway), &wg, &wireguardif_init, &ip_input);
+	WG_MUTEX_UNLOCK();
 	if( wg_netif == nullptr ) {
 		log_e(TAG "failed to initialize WG netif.");
 		return false;
 	}
 	// Mark the interface as administratively up, link up flag is set automatically when peer connects
+	WG_MUTEX_LOCK();
 	netif_set_up(wg_netif);
+	WG_MUTEX_UNLOCK();
 
 	peer.public_key = remotePeerPublicKey;
 	peer.preshared_key = NULL;
@@ -112,7 +127,11 @@ bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const I
 		// Save the current default interface for restoring when shutting down the WG interface.
 		previous_default_netif = netif_default;
 		// Set default interface to WG device.
+		#ifndef WIREGUARD_KEEP_DEFAULT_NETIF
+		WG_MUTEX_LOCK();
         netif_set_default(wg_netif);
+		WG_MUTEX_UNLOCK();
+		#endif
 	}
 
 	this->_is_initialized = true;
@@ -130,7 +149,11 @@ void WireGuard::end() {
 	if( !this->_is_initialized ) return;
 
 	// Restore the default interface.
+	#ifndef WIREGUARD_KEEP_DEFAULT_NETIF
+	WG_MUTEX_LOCK();
 	netif_set_default(previous_default_netif);
+	WG_MUTEX_UNLOCK();
+	#endif
 	previous_default_netif = nullptr;
 	// Disconnect the WG interface.
 	wireguardif_disconnect(wg_netif, wireguard_peer_index);
@@ -140,7 +163,9 @@ void WireGuard::end() {
 	// Shutdown the wireguard interface.
 	wireguardif_shutdown(wg_netif);
 	// Remove the WG interface;
+	WG_MUTEX_LOCK();
 	netif_remove(wg_netif);
+	WG_MUTEX_UNLOCK();
 	wg_netif = nullptr;
 
 	this->_is_initialized = false;

@@ -38,6 +38,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "lwip/tcpip.h"
 #include "lwip/netif.h"
 #include "lwip/ip.h"
 #include "lwip/udp.h"
@@ -48,13 +49,23 @@
 #include "wireguard.h"
 #include "crypto.h"
 #include "esp_log.h"
-#include "tcpip_adapter.h"
+#include <esp_netif.h>
 
 #include "esp32-hal-log.h"
 
 #define WIREGUARDIF_TIMER_MSECS 400
 
 #define TAG "[WireGuard] "
+
+#define WG_MUTEX_LOCK()                                \
+  if (!sys_thread_tcpip(LWIP_CORE_LOCK_QUERY_HOLDER)) { \
+    LOCK_TCPIP_CORE();                                  \
+  }
+
+#define WG_MUTEX_UNLOCK()                             \
+  if (sys_thread_tcpip(LWIP_CORE_LOCK_QUERY_HOLDER)) { \
+    UNLOCK_TCPIP_CORE();                               \
+  }
 
 static void update_peer_addr(struct wireguard_peer *peer, const ip_addr_t *addr, u16_t port) {
 	peer->ip = *addr;
@@ -900,6 +911,7 @@ void wireguardif_shutdown(struct netif *netif) {
 
 	struct wireguard_device * device = (struct wireguard_device *)netif->state;
 	// Disable timer.
+	WG_MUTEX_LOCK();
 	sys_untimeout(wireguardif_tmr, device);
 	// remove UDP context.
 	if( device->udp_pcb ) {
@@ -907,6 +919,7 @@ void wireguardif_shutdown(struct netif *netif) {
 		udp_remove(device->udp_pcb);
 		device->udp_pcb = NULL;
 	}
+	WG_MUTEX_UNLOCK();
 	// remove device context.
 	free(device);
 	netif->state = NULL;
@@ -920,8 +933,11 @@ err_t wireguardif_init(struct netif *netif) {
 	uint8_t private_key[WIREGUARD_PRIVATE_KEY_LEN];
 	size_t private_key_len = sizeof(private_key);
 
-	struct netif* underlying_netif;
-	tcpip_adapter_get_netif(TCPIP_ADAPTER_IF_STA, &underlying_netif);
+	struct netif* underlying_netif = NULL;
+	WG_MUTEX_LOCK();
+	underlying_netif = netif_default;
+	WG_MUTEX_UNLOCK();
+
 	log_i(TAG "underlying_netif = %p", underlying_netif);
 
 	LWIP_ASSERT("netif != NULL", (netif != NULL));
@@ -942,10 +958,14 @@ err_t wireguardif_init(struct netif *netif) {
 		if (wireguard_base64_decode(init_data->private_key, private_key, &private_key_len)
 				&& (private_key_len == WIREGUARD_PRIVATE_KEY_LEN)) {
 
+			WG_MUTEX_LOCK();
 			udp = udp_new();
+			WG_MUTEX_UNLOCK();
 
 			if (udp) {
+				WG_MUTEX_LOCK();
 				result = udp_bind(udp, IP_ADDR_ANY, init_data->listen_port); // Note this listens on all interfaces! Really just want the passed netif
+				WG_MUTEX_UNLOCK();
 				if (result == ERR_OK) {
 					device = (struct wireguard_device *)mem_calloc(1, sizeof(struct wireguard_device));
 					if (device) {
@@ -975,10 +995,14 @@ err_t wireguardif_init(struct netif *netif) {
 							// NETIF_FLAG_LINK_UP is automatically set/cleared when at least one peer is connected
 							netif->flags = 0;
 
+							WG_MUTEX_LOCK();
 							udp_recv(udp, wireguardif_network_rx, device);
+							WG_MUTEX_UNLOCK();
 
 							// Start a periodic timer for this wireguard device
+							WG_MUTEX_LOCK();
 							sys_timeout(WIREGUARDIF_TIMER_MSECS, wireguardif_tmr, device);
+							WG_MUTEX_UNLOCK();
 
 							result = ERR_OK;
 						} else {
