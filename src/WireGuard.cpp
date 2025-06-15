@@ -40,7 +40,7 @@ static uint8_t wireguard_peer_index = WIREGUARDIF_INVALID_INDEX;
     UNLOCK_TCPIP_CORE();                               \
   }
 
-bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort) {
+bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort, const char* presharedKey) {
 	struct wireguardif_init_data wg;
 	struct wireguardif_peer peer;
 	ip_addr_t ipaddr = IPADDR4_INIT(static_cast<uint32_t>(localIP));
@@ -105,7 +105,7 @@ bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const I
 	WG_MUTEX_UNLOCK();
 
 	peer.public_key = remotePeerPublicKey;
-	peer.preshared_key = NULL;
+	peer.preshared_key = presharedKey;
 	// Allow all IPs through tunnel
     {
         ip_addr_t allowed_ip = IPADDR4_INIT_BYTES(0, 0, 0, 0);
@@ -138,11 +138,11 @@ bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const I
 	return true;
 }
 
-bool WireGuard::begin(const IPAddress& localIP, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort) {
+bool WireGuard::begin(const IPAddress& localIP, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort, const char* presharedKey) {
 	// Maintain compatiblity with old begin 
 	auto subnet = IPAddress(255,255,255,255);
 	auto gateway = IPAddress(0,0,0,0);
-	return WireGuard::begin(localIP, subnet, gateway, privateKey, remotePeerAddress, remotePeerPublicKey, remotePeerPort);
+	return WireGuard::begin(localIP, subnet, gateway, privateKey, remotePeerAddress, remotePeerPublicKey, remotePeerPort, presharedKey);
 }
 
 void WireGuard::end() {
