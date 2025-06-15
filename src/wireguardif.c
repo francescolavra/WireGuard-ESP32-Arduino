@@ -758,12 +758,25 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 	err_t result;
 	uint8_t public_key[WIREGUARD_PUBLIC_KEY_LEN];
 	size_t public_key_len = sizeof(public_key);
+	uint8_t psk[WIREGUARD_SESSION_KEY_LEN];
 	struct wireguard_peer *peer = NULL;
 
 	uint32_t t1 = wireguard_sys_now();
 
+	result = ERR_OK;
 	if (wireguard_base64_decode(p->public_key, public_key, &public_key_len)
 			&& (public_key_len == WIREGUARD_PUBLIC_KEY_LEN)) {
+		if (p->preshared_key) {
+			size_t psk_len = sizeof(psk);
+
+			if (!wireguard_base64_decode(p->preshared_key, psk, &psk_len) || (psk_len != sizeof(psk))) {
+				result = ERR_ARG;
+			}
+		}
+	} else {
+		result = ERR_ARG;
+	}
+	if (result == ERR_OK) {
 
 		// See if the peer is already registered
 		peer = peer_lookup_by_pubkey(device, public_key);
@@ -772,7 +785,7 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 			peer = peer_alloc(device);
 			if (peer) {
 
-				if (wireguard_peer_init(device, peer, public_key, p->preshared_key)) {
+				if (wireguard_peer_init(device, peer, public_key, p->preshared_key ? psk : NULL)) {
 
 					peer->connect_ip = p->endpoint_ip;
 					peer->connect_port = p->endport_port;
@@ -785,19 +798,13 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 					}
 					peer_add_ip(peer, p->allowed_ip, p->allowed_mask);
 					memcpy(peer->greatest_timestamp, p->greatest_timestamp, sizeof(peer->greatest_timestamp));
-
-					result = ERR_OK;
 				} else {
 					result = ERR_ARG;
 				}
 			} else {
 				result = ERR_MEM;
 			}
-		} else {
-			result = ERR_OK;
 		}
-	} else {
-		result = ERR_ARG;
 	}
 
 	uint32_t t2 = wireguard_sys_now();
