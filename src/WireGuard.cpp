@@ -146,14 +146,6 @@ bool WireGuard::addPeer(const char* address, uint16_t port, const char* publicKe
 		// Start outbound connection to peer
         log_i(TAG "connecting wireguard...");
 		wireguardif_connect(wg_netif, wireguard_peer_index);
-		// Save the current default interface for restoring when shutting down the WG interface.
-		previous_default_netif = netif_default;
-		// Set default interface to WG device.
-		#ifndef WIREGUARD_KEEP_DEFAULT_NETIF
-		WG_MUTEX_LOCK();
-        netif_set_default(wg_netif);
-		WG_MUTEX_UNLOCK();
-		#endif
 	}
 
 	return true;
@@ -205,4 +197,13 @@ bool WireGuard::isUp(IPAddress& peerIP) {
 		peerIP = ip4_addr_get_u32(ip_2_ip4(&peer_ip));
 	}
 	return (err == ERR_OK);
+}
+
+void WireGuard::setDefaultIface() {
+	// Save the current default interface for restoring when shutting down the WG interface.
+	previous_default_netif = netif_default;
+	// Set default interface to WG device.
+	WG_MUTEX_LOCK();
+	netif_set_default(wg_netif);
+	WG_MUTEX_UNLOCK();
 }

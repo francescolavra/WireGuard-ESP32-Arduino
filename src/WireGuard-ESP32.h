@@ -17,4 +17,5 @@ public:
     void end();
     bool is_initialized() const { return this->_is_initialized; }
     bool isUp(IPAddress& peerIP);
+    void setDefaultIface();
 };
