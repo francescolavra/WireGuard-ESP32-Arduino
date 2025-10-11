@@ -26,7 +26,6 @@ extern "C" {
 // Wireguard instance
 static struct netif wg_netif_struct = {0};
 static struct netif *wg_netif = NULL;
-static struct netif *previous_default_netif = NULL;
 static uint8_t wireguard_peer_index = WIREGUARDIF_INVALID_INDEX;
 
 #define TAG "[WireGuard] "
@@ -162,11 +161,6 @@ void WireGuard::end() {
 	if( !this->_is_initialized ) return;
 
 	if (wireguard_peer_index != WIREGUARDIF_INVALID_INDEX) {
-		// Restore the default interface.
-		WG_MUTEX_LOCK();
-		netif_set_default(previous_default_netif);
-		WG_MUTEX_UNLOCK();
-		previous_default_netif = nullptr;
 		// Disconnect the WG interface.
 		wireguardif_disconnect(wg_netif, wireguard_peer_index);
 		// Remove peer from the WG interface
@@ -200,8 +194,6 @@ bool WireGuard::isUp(IPAddress& peerIP) {
 }
 
 void WireGuard::setDefaultIface() {
-	// Save the current default interface for restoring when shutting down the WG interface.
-	previous_default_netif = netif_default;
 	// Set default interface to WG device.
 	WG_MUTEX_LOCK();
 	netif_set_default(wg_netif);
