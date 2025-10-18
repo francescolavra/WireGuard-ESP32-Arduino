@@ -796,7 +796,10 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 					} else {
 						peer->keepalive_interval = p->keep_alive;
 					}
-					peer_add_ip(peer, p->allowed_ip, p->allowed_mask);
+					for (int i = 0; i < p->allowed_count; i++) {
+						peer_add_ip(peer,
+							    p->allowed_ip[i], p->allowed_mask[i]);
+					}
 					memcpy(peer->greatest_timestamp, p->greatest_timestamp, sizeof(peer->greatest_timestamp));
 				} else {
 					result = ERR_ARG;
@@ -1052,8 +1055,10 @@ void wireguardif_peer_init(struct wireguardif_peer *peer) {
 	ip_addr_set_any(false, &peer->endpoint_ip);
 	peer->endport_port = WIREGUARDIF_DEFAULT_PORT;
 	peer->keep_alive = WIREGUARDIF_KEEPALIVE_DEFAULT;
-	ip_addr_set_any(false, &peer->allowed_ip);
-	ip_addr_set_any(false, &peer->allowed_mask);
+	for (int i = 0; i < WIREGUARDIF_MAX_ALLOWED; i++) {
+		ip_addr_set_any(false, &peer->allowed_ip[i]);
+		ip_addr_set_any(false, &peer->allowed_mask[i]);
+	}
 	memset(peer->greatest_timestamp, 0, sizeof(peer->greatest_timestamp));
 	peer->preshared_key = NULL;
 }

@@ -42,7 +42,7 @@ static uint8_t wireguard_peer_index = WIREGUARDIF_INVALID_INDEX;
 bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort) {
 	return begin(localIP, Subnet, Gateway, privateKey, WIREGUARDIF_MTU) &&
 		addPeer(remotePeerAddress, remotePeerPort, remotePeerPublicKey, NULL,
-				IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), WIREGUARDIF_KEEPALIVE_DEFAULT);
+				NULL, NULL, 0, WIREGUARDIF_KEEPALIVE_DEFAULT);
 }
 
 bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, uint16_t mtu) {
@@ -80,12 +80,15 @@ bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const I
 	return true;
 }
 
-bool WireGuard::addPeer(const char* address, uint16_t port, const char* publicKey, const char* preSharedKey, const IPAddress& allowedAddr, const IPAddress& allowedMask, uint16_t keep_alive) {
+bool WireGuard::addPeer(const char* address, uint16_t port, const char* publicKey, const char* preSharedKey,
+                        const IPAddress* allowedAddr, const IPAddress* allowedMask, int allowedCount,
+                        uint16_t keep_alive) {
 	struct wireguardif_peer peer;
 
 	assert(address != NULL);
 	assert(publicKey != NULL);
 	assert(port != 0);
+	assert(allowedCount <= WIREGUARDIF_MAX_ALLOWED);
 
 	// Initialise the first WireGuard peer structure
 	wireguardif_peer_init(&peer);
@@ -124,12 +127,13 @@ bool WireGuard::addPeer(const char* address, uint16_t port, const char* publicKe
 	peer.public_key = publicKey;
 	peer.preshared_key = preSharedKey;
 	peer.keep_alive = keep_alive;
-    {
-        ip_addr_t allowed_ip = IPADDR4_INIT(static_cast<uint32_t>(allowedAddr));
-        peer.allowed_ip = allowed_ip;
-        ip_addr_t allowed_mask = IPADDR4_INIT(static_cast<uint32_t>(allowedMask));
-        peer.allowed_mask = allowed_mask;
+    for (int i = 0; i < allowedCount; i++) {
+        ip_addr_t allowed_ip = IPADDR4_INIT(static_cast<uint32_t>(allowedAddr[i]));
+        peer.allowed_ip[i] = allowed_ip;
+        ip_addr_t allowed_mask = IPADDR4_INIT(static_cast<uint32_t>(allowedMask[i]));
+        peer.allowed_mask[i] = allowed_mask;
     }
+    peer.allowed_count = allowedCount;
 	
 	peer.endport_port = port;
 

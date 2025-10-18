@@ -47,6 +47,8 @@
 #define WIREGUARDIF_DEFAULT_PORT		(51820)
 #define WIREGUARDIF_KEEPALIVE_DEFAULT	(0xFFFF)
 
+#define WIREGUARDIF_MAX_ALLOWED 3
+
 struct wireguardif_init_data {
 	// Required: the private key of this WireGuard network interface
 	const char *private_key;
@@ -63,9 +65,10 @@ struct wireguardif_peer {
 	// tai64n of largest timestamp we have seen during handshake to avoid replays
 	uint8_t greatest_timestamp[12];
 
-	// Allowed ip/netmask (can add additional later but at least one is required)
-	ip_addr_t allowed_ip;
-	ip_addr_t allowed_mask;
+	// Allowed ip/netmask
+	ip_addr_t allowed_ip[WIREGUARDIF_MAX_ALLOWED];
+	ip_addr_t allowed_mask[WIREGUARDIF_MAX_ALLOWED];
+	int allowed_count;
 
 	// End-point details (may be blank)
 	ip_addr_t endpoint_ip;
