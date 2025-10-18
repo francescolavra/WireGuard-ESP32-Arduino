@@ -9,7 +9,6 @@
 #include "freertos/event_groups.h"
 #include "esp_system.h"
 
-#include "lwip/dns.h"
 #include "lwip/tcpip.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -41,17 +40,16 @@ static uint8_t wireguard_peer_index = WIREGUARDIF_INVALID_INDEX;
   }
 
 bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, const char* remotePeerAddress, const char* remotePeerPublicKey, uint16_t remotePeerPort) {
-	return begin(localIP, Subnet, Gateway, privateKey, IPAddress(0, 0, 0, 0), WIREGUARDIF_MTU) &&
+	return begin(localIP, Subnet, Gateway, privateKey, WIREGUARDIF_MTU) &&
 		addPeer(remotePeerAddress, remotePeerPort, remotePeerPublicKey, NULL,
 				IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), WIREGUARDIF_KEEPALIVE_DEFAULT);
 }
 
-bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, const IPAddress& DNS, uint16_t mtu) {
+bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const IPAddress& Gateway, const char* privateKey, uint16_t mtu) {
 	struct wireguardif_init_data wg;
 	ip_addr_t ipaddr = IPADDR4_INIT(static_cast<uint32_t>(localIP));
 	ip_addr_t netmask = IPADDR4_INIT(static_cast<uint32_t>(Subnet));
 	ip_addr_t gateway = IPADDR4_INIT(static_cast<uint32_t>(Gateway));
-	ip_addr_t dns_server = IPADDR4_INIT(static_cast<uint32_t>(DNS));
 
 	assert(privateKey != NULL);
 
@@ -78,10 +76,6 @@ bool WireGuard::begin(const IPAddress& localIP, const IPAddress& Subnet, const I
 	// Initialize the platform
 	wireguard_platform_init();
 
-	if (!ip_addr_isany(&dns_server)) {
-		/* Set the second DNS server (the first one is typically retrieved via DHCP) */
-		dns_setserver(1, &dns_server);
-	}
 	this->_is_initialized = true;
 	return true;
 }
