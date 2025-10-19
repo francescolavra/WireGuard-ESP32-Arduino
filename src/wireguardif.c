@@ -38,6 +38,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "lwip/dns.h"
 #include "lwip/tcpip.h"
 #include "lwip/netif.h"
 #include "lwip/ip.h"
@@ -693,11 +694,10 @@ err_t wireguardif_connect(struct netif *netif, u8_t peer_index) {
 	struct wireguard_peer *peer;
 	err_t result = wireguardif_lookup_peer(netif, peer_index, &peer);
 	if (result == ERR_OK) {
-		// Check that a valid connect ip and port have been set
-		if (!ip_addr_isany(&peer->connect_ip) && (peer->connect_port > 0)) {
+		// Check that a valid connect address and port have been set
+		if (peer->connect_addr[0] && (peer->connect_port > 0)) {
 			// Set the flag that we want to try connecting
 			peer->active = true;
-			peer->ip = peer->connect_ip;
 			peer->port = peer->connect_port;
 			result = ERR_OK;
 		} else {
@@ -773,6 +773,7 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 	uint8_t public_key[WIREGUARD_PUBLIC_KEY_LEN];
 	size_t public_key_len = sizeof(public_key);
 	uint8_t psk[WIREGUARD_SESSION_KEY_LEN];
+	int addr_len;
 	struct wireguard_peer *peer = NULL;
 
 	uint32_t t1 = wireguard_sys_now();
@@ -791,6 +792,12 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 		result = ERR_ARG;
 	}
 	if (result == ERR_OK) {
+		addr_len = strlen(p->endpoint_addr);
+		if (addr_len >= sizeof(peer->connect_addr)) {
+			result = ERR_ARG;
+		}
+	}
+	if (result == ERR_OK) {
 
 		// See if the peer is already registered
 		peer = peer_lookup_by_pubkey(device, public_key);
@@ -800,10 +807,8 @@ err_t wireguardif_add_peer(struct netif *netif, struct wireguardif_peer *p, u8_t
 			if (peer) {
 
 				if (wireguard_peer_init(device, peer, public_key, p->preshared_key ? psk : NULL)) {
-
-					peer->connect_ip = p->endpoint_ip;
+					memcpy(peer->connect_addr, p->endpoint_addr, addr_len + 1);
 					peer->connect_port = p->endport_port;
-					peer->ip = peer->connect_ip;
 					peer->port = peer->connect_port;
 					if (p->keep_alive == WIREGUARDIF_KEEPALIVE_DEFAULT) {
 						peer->keepalive_interval = KEEPALIVE_TIMEOUT;
@@ -882,6 +887,14 @@ static bool should_reset_peer(struct wireguard_peer *peer) {
 	return result;
 }
 
+static void wireguardif_dns_cb(const char *name, const ip_addr_t *addr, void *arg) {
+	if (addr) {
+		struct wireguard_peer *peer = (struct wireguard_peer *)arg;
+
+		peer->connect_ip = peer->ip = *addr;
+    }
+}
+
 static void wireguardif_tmr(void *arg) {
 	struct wireguard_device *device = (struct wireguard_device *)arg;
 	struct wireguard_peer *peer;
@@ -894,6 +907,17 @@ static void wireguardif_tmr(void *arg) {
 	for (x=0; x < WIREGUARD_MAX_PEERS; x++) {
 		peer = &device->peers[x];
 		if (peer->valid) {
+			if (ip_addr_isany(&peer->connect_ip)) {
+				err_t err;
+
+				err = dns_gethostbyname(peer->connect_addr, &peer->connect_ip,
+							wireguardif_dns_cb, peer);
+				if (err != ERR_OK ) {
+					continue;
+				}
+				peer->ip = peer->connect_ip;
+			}
+
 			// Do we need to rekey / send a handshake?
 			if (should_reset_peer(peer)) {
 				// Nothing back for too long - we should wipe out all crypto state
@@ -1057,7 +1081,7 @@ void wireguardif_peer_init(struct wireguardif_peer *peer) {
 	memset(peer, 0, sizeof(struct wireguardif_peer));
 	// Caller must provide 'public_key'
 	peer->public_key = NULL;
-	ip_addr_set_any(false, &peer->endpoint_ip);
+	peer->endpoint_addr = NULL;
 	peer->endport_port = WIREGUARDIF_DEFAULT_PORT;
 	peer->keep_alive = WIREGUARDIF_KEEPALIVE_DEFAULT;
 	for (int i = 0; i < WIREGUARDIF_MAX_ALLOWED; i++) {

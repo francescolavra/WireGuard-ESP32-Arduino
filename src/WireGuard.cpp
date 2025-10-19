@@ -13,7 +13,6 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "lwip/ip.h"
-#include "lwip/netdb.h"
 
 #include "esp32-hal-log.h"
 
@@ -92,37 +91,6 @@ bool WireGuard::addPeer(const char* address, uint16_t port, const char* publicKe
 
 	// Initialise the first WireGuard peer structure
 	wireguardif_peer_init(&peer);
-	// If we know the endpoint's address can add here
-	bool success_get_endpoint_ip = false;
-    for(int retry = 0; retry < 5; retry++) {
-        ip_addr_t endpoint_ip = IPADDR4_INIT_BYTES(0, 0, 0, 0);
-        struct addrinfo *res = NULL;
-        struct addrinfo hint;
-        memset(&hint, 0, sizeof(hint));
-        memset(&endpoint_ip, 0, sizeof(endpoint_ip));
-        if( lwip_getaddrinfo(address, NULL, &hint, &res) != 0 ) {
-			vTaskDelay(pdMS_TO_TICKS(2000));
-			continue;
-		}
-		success_get_endpoint_ip = true;
-        struct in_addr addr4 = ((struct sockaddr_in *) (res->ai_addr))->sin_addr;
-        inet_addr_to_ip4addr(ip_2_ip4(&endpoint_ip), &addr4);
-        lwip_freeaddrinfo(res);
-
-        peer.endpoint_ip = endpoint_ip;
-        log_i(TAG "%s is %3d.%3d.%3d.%3d"
-			, address
-            , (endpoint_ip.u_addr.ip4.addr >>  0) & 0xff
-            , (endpoint_ip.u_addr.ip4.addr >>  8) & 0xff
-            , (endpoint_ip.u_addr.ip4.addr >> 16) & 0xff
-            , (endpoint_ip.u_addr.ip4.addr >> 24) & 0xff
-            );
-		break;
-    }
-	if( !success_get_endpoint_ip  ) {
-		log_e(TAG "failed to get endpoint ip.");
-		return false;
-	}
 
 	peer.public_key = publicKey;
 	peer.preshared_key = preSharedKey;
@@ -135,11 +103,12 @@ bool WireGuard::addPeer(const char* address, uint16_t port, const char* publicKe
     }
     peer.allowed_count = allowedCount;
 	
+	peer.endpoint_addr = address;
 	peer.endport_port = port;
 
 	// Register the new WireGuard peer with the netwok interface
 	wireguardif_add_peer(wg_netif, &peer, &wireguard_peer_index);
-	if ((wireguard_peer_index != WIREGUARDIF_INVALID_INDEX) && !ip_addr_isany(&peer.endpoint_ip)) {
+	if ((wireguard_peer_index != WIREGUARDIF_INVALID_INDEX)) {
 		// Start outbound connection to peer
         log_i(TAG "connecting wireguard...");
 		wireguardif_connect(wg_netif, wireguard_peer_index);

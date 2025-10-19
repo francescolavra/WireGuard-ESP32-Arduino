@@ -116,6 +116,8 @@ struct wireguard_peer {
 	bool valid; // Is this peer initialised?
 	bool active; // Should we be actively trying to connect?
 
+	char connect_addr[128];
+
 	// This is the configured IP of the peer (endpoint)
 	ip_addr_t connect_ip;
 	u16_t connect_port;

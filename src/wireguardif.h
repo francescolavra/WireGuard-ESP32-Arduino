@@ -71,7 +71,7 @@ struct wireguardif_peer {
 	int allowed_count;
 
 	// End-point details (may be blank)
-	ip_addr_t endpoint_ip;
+	const char *endpoint_addr;
 	u16_t endport_port;
 	u16_t keep_alive;
 };
